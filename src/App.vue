@@ -7,6 +7,17 @@
       <canvas ref="canvas"></canvas>
       <canvas ref="overlayCanvas" class="overlay-canvas"></canvas>
 
+      <!-- Vizual mask: oval tashqarisini oq bilan yopadi (faqat ko'rsatish, backend'ga to'liq frame ketadi) -->
+      <svg class="face-mask" preserveAspectRatio="none" viewBox="0 0 100 100">
+        <defs>
+          <mask id="face-cutout-mask">
+            <rect width="100" height="100" fill="white"/>
+            <ellipse cx="50" cy="50" rx="30" ry="42.5" fill="black"/>
+          </mask>
+        </defs>
+        <rect width="100" height="100" fill="white" mask="url(#face-cutout-mask)"/>
+      </svg>
+
       <!-- Face guide oval -->
       <div class="face-guide" :class="faceGuideClass">
         <svg viewBox="0 0 200 260" class="face-oval">
@@ -72,6 +83,8 @@
 </template>
 
 <script>
+import { markRaw } from "vue"
+
 export default {
   data() {
     return {
@@ -91,8 +104,6 @@ export default {
       faceInPosition: false,
       faceDistance: "unknown", // "too_close", "too_far", "good"
       faceReady: false,
-      faceDetectionInterval: null,
-      faceDetector: null,
       challengeLabels: {
         blink: "👁️ Ko'zingizni yuming",
         turn_left: "👈 Chapga qarang",
@@ -182,6 +193,10 @@ export default {
     },
 
     async initFaceDetection() {
+      if (this.faceDetector) {
+        this.log("Detector allaqachon mavjud, qayta yaratilmadi")
+        return
+      }
       try {
         this.log("MediaPipe yuklanmoqda...")
 
@@ -189,18 +204,36 @@ export default {
 
         this.log("WASM yuklanmoqda...")
         const wasmFileset = await FilesetResolver.forVisionTasks(
-          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm"
         )
 
         this.log("Face detector yaratilmoqda...")
-        this.faceDetector = await FaceDetector.createFromOptions(wasmFileset, {
-          baseOptions: {
-            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite",
-            delegate: "GPU",
-          },
-          runningMode: "VIDEO",
-          minDetectionConfidence: 0.5,
-        })
+        let detector
+        try {
+          detector = await FaceDetector.createFromOptions(wasmFileset, {
+            baseOptions: {
+              modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite",
+              delegate: "GPU",
+            },
+            runningMode: "VIDEO",
+            minDetectionConfidence: 0.5,
+          })
+        } catch (gpuErr) {
+          this.log("GPU ishlamadi, CPU'ga o'tilmoqda: " + gpuErr.message)
+          detector = await FaceDetector.createFromOptions(wasmFileset, {
+            baseOptions: {
+              modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite",
+              delegate: "CPU",
+            },
+            runningMode: "VIDEO",
+            minDetectionConfidence: 0.5,
+          })
+        }
+
+        // Aniq ravishda VIDEO rejimini majburlash (ba'zi versiyalarda kerak bo'ladi)
+        await detector.setOptions({ runningMode: "VIDEO" })
+
+        this.faceDetector = markRaw(detector)
 
         this.log("Face detector tayyor!")
         this.startFaceDetectionLoop()
@@ -292,28 +325,28 @@ export default {
       const vw = video.videoWidth
       const vh = video.videoHeight
 
-      // Ideal face area (oval guide area)
+      // Ideal face area — visual oval is 60% width × 85% height of container
       const idealCenterX = vw / 2
       const idealCenterY = vh / 2
-      const idealWidth = vw * 0.4  // 40% of video width
-      const idealHeight = vh * 0.55 // 55% of video height
+      const idealWidth = vw * 0.6
+      const idealHeight = vh * 0.85
 
-      // Check distance (face size relative to ideal)
+      // Check distance — face should fill ~40-90% of oval width
       const faceRatio = faceWidth / idealWidth
-      if (faceRatio > 1.3) {
+      if (faceRatio > 0.95) {
         this.faceDistance = "too_close"
-      } else if (faceRatio < 0.6) {
+      } else if (faceRatio < 0.35) {
         this.faceDistance = "too_far"
       } else {
         this.faceDistance = "good"
       }
 
-      // Check position (is face center within oval bounds)
+      // Check position — face center within oval bounds (lenient)
       const dx = Math.abs(faceCenterX - idealCenterX) / (idealWidth * 0.5)
       const dy = Math.abs(faceCenterY - idealCenterY) / (idealHeight * 0.5)
       const distanceFromCenter = Math.sqrt(dx * dx + dy * dy)
 
-      this.faceInPosition = distanceFromCenter < 0.8
+      this.faceInPosition = distanceFromCenter < 1.0
 
       // Face is ready when in position and at good distance
       this.faceReady = this.faceInPosition && this.faceDistance === "good"
@@ -589,6 +622,14 @@ canvas {
   height: 100%;
   pointer-events: none;
   transform: scaleX(-1);
+}
+
+.face-mask {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 
 .face-guide {
