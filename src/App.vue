@@ -86,12 +86,13 @@
           />
         </div>
 
-        <h1 class="title center">{{ challengeTitle }}</h1>
-        <p class="subtitle center">Asta-sekin harakatlaning</p>
+        <div class="challenge-card" :key="challengeType || 'pending'">
+          <h1 class="challenge-title">{{ challengeTitle }}</h1>
+        </div>
 
         <div class="camera-area">
           <div class="camera-wrapper">
-            <div class="camera-ring" :class="{ recording: phase === 'recording', verifying: phase === 'verifying', passed: phase === 'passed' }">
+            <div class="camera-ring" :class="{ ready: faceReady && (phase === 'searching' || phase === 'preparing'), recording: phase === 'recording', verifying: phase === 'verifying', passed: phase === 'passed' }">
               <div class="camera-inner">
                 <video ref="video" autoplay playsinline muted></video>
                 <div v-if="phase === 'preparing' && countdown > 0" class="countdown-overlay">
@@ -267,6 +268,21 @@ const ARROW = {
   nod_down: "down",
 }
 
+const EMOJI = {
+  turn_right: "👉",
+  turn_left: "👈",
+  smile: "😊",
+  blink: "👁️",
+  open_mouth: "😮",
+  nod_up: "⬆️",
+  nod_down: "⬇️",
+  raise_eyebrows: "🤨",
+  wink_left: "😉",
+  wink_right: "😉",
+  tilt_left: "↩️",
+  tilt_right: "↪️",
+}
+
 export default {
   data() {
     return {
@@ -305,6 +321,10 @@ export default {
     challengeTitle() {
       const t = this.challengeType
       return (t && TITLES[t]) || "Harakatni bajaring"
+    },
+    challengeEmoji() {
+      const t = this.challengeType
+      return (t && EMOJI[t]) || "✨"
     },
     arrowDirection() {
       const t = this.challengeType
@@ -789,6 +809,7 @@ export default {
 
 <style>
 :root {
+  --page-bg: #ffffff;
   --primary: #E5564E;
   --primary-dark: #D85A30;
   --primary-light: #FAECE7;
@@ -818,7 +839,7 @@ html, body, #app {
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  background: #ffffff;
+  background: var(--page-bg);
   color: var(--text-primary);
   font-size: 12px;
   line-height: 1.4;
@@ -832,7 +853,7 @@ body {
   margin: 0 auto;
   min-height: 100vh;
   min-height: -webkit-fill-available;
-  background: #ffffff;
+  background: var(--page-bg);
 }
 
 .screen {
@@ -1049,6 +1070,37 @@ body {
   margin-top: 12px;
 }
 
+/* ===== Challenge card ===== */
+.challenge-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 14px 18px;
+  margin: 8px 4px 16px;
+  box-shadow:
+    0 1px 2px rgba(216, 90, 48, 0.08),
+    0 4px 10px rgba(216, 90, 48, 0.10),
+    0 14px 32px rgba(216, 90, 48, 0.18),
+    0 24px 48px rgba(20, 20, 40, 0.10);
+  animation: card-in 360ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.challenge-card .challenge-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.2px;
+  line-height: 1.3;
+  margin: 0;
+  text-align: center;
+}
+@keyframes card-in {
+  0% { opacity: 0; transform: translateY(-6px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
 /* ===== Camera ===== */
 .camera-area {
   display: flex;
@@ -1071,6 +1123,12 @@ body {
   box-sizing: border-box;
   transition: border-color 200ms ease, box-shadow 200ms ease;
 }
+.camera-ring.ready {
+  border-style: solid;
+  border-color: var(--success);
+  box-shadow: 0 0 0 4px rgba(29, 158, 117, 0.18);
+  animation: ring-ready 1.6s ease-in-out infinite;
+}
 .camera-ring.recording {
   border-style: solid;
   animation: ring-pulse 1.6s ease-in-out infinite;
@@ -1083,7 +1141,11 @@ body {
 .camera-ring.passed {
   border-style: solid;
   border-color: var(--success);
-  box-shadow: 0 0 0 8px rgba(29, 158, 117, 0.18);
+  box-shadow: 0 0 0 10px rgba(29, 158, 117, 0.20);
+}
+@keyframes ring-ready {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(29, 158, 117, 0.28); }
+  50% { box-shadow: 0 0 0 14px rgba(29, 158, 117, 0); }
 }
 @keyframes ring-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(216, 90, 48, 0.35); }
@@ -1209,8 +1271,12 @@ body {
   background: #F0B650;
   flex-shrink: 0;
 }
+.status-pill.status-detected {
+  background: var(--success-bg);
+  color: var(--success-dark-text);
+}
 .status-pill.status-detected .status-dot {
-  background: var(--primary-dark);
+  background: var(--success);
 }
 .status-pill.status-recording .status-dot {
   background: var(--primary);
